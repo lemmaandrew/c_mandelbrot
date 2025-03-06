@@ -18,7 +18,12 @@ const char HELPTEXT[] =
     "-o    image output path (default test.png)\n"
     "-g    use gpu instead of serial (default serial)\n";
 
-const char *mandelbrot_kernel_source =
+// i should probably create a .cl file or something for this
+// but whatever
+
+// kernel source for gpu_main.
+// includes a duplicate of `derbail`
+const char mandelbrot_kernel_source[] =
     "\n"
     "unsigned int derbail(double real0, double imag0, unsigned int max_iters,\n"
     "                     double bailout) {\n"
@@ -31,13 +36,10 @@ const char *mandelbrot_kernel_source =
     "    double dimag_sum = 0.0;\n"
     "\n"
     "    for (unsigned int n = 1; n < max_iters; ++n) {\n"
-    "        // (x + yi)^2 = x * x + 2ixy + -(y * y)\n"
     "        double x = real * real - imag * imag;\n"
     "        imag = 2 * real * imag + imag0;\n"
     "        real = x + real0;\n"
     "\n"
-    "        // (a + bi) * (c + di) = ac + adi + bci - bd\n"
-    "        //                     = (ac - bd) + (adi + bci)\n"
     "        double dx = 2 * (dreal * real - dimag * imag) + 1;\n"
     "        double dy = 2 * (dreal * imag + dimag * real);\n"
     "        dreal = dx;\n"
@@ -75,6 +77,8 @@ const char *mandelbrot_kernel_source =
     "    }\n"
     "}\n";
 
+// Derivative bailout procedure for getting the iterations of a point on the
+// mandelbrot set
 unsigned int derbail(double real0, double imag0, unsigned int max_iters,
                      double bailout) {
     double real = real0;
@@ -109,6 +113,7 @@ unsigned int derbail(double real0, double imag0, unsigned int max_iters,
     return 0;
 }
 
+// Serially assigning iterations on an image array
 void mandelbrot(unsigned char *out, double real_center, double imag_center,
                 unsigned int width, unsigned int height, double stepsize,
                 unsigned int max_iters, double bailout) {
@@ -129,6 +134,7 @@ void mandelbrot(unsigned char *out, double real_center, double imag_center,
     }
 }
 
+// Saving the created mandelbrot image to `output` filepath
 void save_image(unsigned char *mem, unsigned int width, unsigned int height,
                 const char output[256]) {
     VipsImage *image;
@@ -140,6 +146,8 @@ void save_image(unsigned char *mem, unsigned int width, unsigned int height,
     g_object_unref(image);
 }
 
+// Looooooooooooooong function for parallel-y creating and writing a mandelbrot
+// image
 int gpu_main(double real_center, double imag_center, unsigned int width,
              unsigned int height, double stepsize, unsigned int max_iters,
              double bailout, const char output[256]) {
@@ -172,26 +180,21 @@ int gpu_main(double real_center, double imag_center, unsigned int width,
 
     cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &err);
     if (err != CL_SUCCESS) {
-        printf("Failed to build context (error code: %d)\n", err);
+        printf("Failed to create context (error code: %d)\n", err);
         return EXIT_FAILURE;
     }
     cl_command_queue commands =
         clCreateCommandQueueWithProperties(context, device_id, 0, &err);
     if (err != CL_SUCCESS) {
-        printf("Failed to build commands (error code: %d)\n", err);
+        printf("Failed to create commands (error code: %d)\n", err);
         return EXIT_FAILURE;
     }
     cl_program program = clCreateProgramWithSource(
-        context, 1, &mandelbrot_kernel_source, NULL, &err);
+        context, 1, (const char **)&mandelbrot_kernel_source, NULL, &err);
     if (err != CL_SUCCESS) {
         printf("Failed to create program (error code: %d)\n", err);
         return EXIT_FAILURE;
     }
-
-    // debugging program
-    // cl_uint num_devices;
-    // clGetProgramInfo(program, CL_PROGRAM_SOURCE, sizeof(cl_uint),
-    // &num_devices, NULL); printf("%d\n", num_devices);
 
     err = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
     if (err != CL_SUCCESS) {
